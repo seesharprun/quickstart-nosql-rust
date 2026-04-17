@@ -1,4 +1,5 @@
 use dotenv;
+use futures::StreamExt;
 use socketioxide::SocketIo;
 use socketioxide::extract::SocketRef;
 use std::net::SocketAddr;
@@ -16,18 +17,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (layer, io) = SocketIo::new_layer();
 
-    io.ns("/", |socket: SocketRef| {        
+    io.ns("/", async |socket: SocketRef| {        
         println!("Socket connected: {:?}", socket.id);
-        socket.on("start", move |socket: SocketRef| {
-            let handle_message = move |message: String| {                        
-                match socket.emit("new_message", &message) {
-                    Ok(_) => {
-                        println!("{}", message);
-                    }
-                    Err(e) => {
-                        println!("Failed to emit new message: {:?}", e);
-                    }
-                }
+        socket.on("start", async move |socket: SocketRef| {
+            let (tx, mut rx) = futures::channel::mpsc::unbounded::<String>();
+
+            let handle_message = move |message: String| {
+                let _ = tx.unbounded_send(message);
             };
 
             tokio::spawn(async move {
@@ -41,6 +37,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Err(e) => println!("Error running Azure Cosmos DB for NoSQL script: {:?}", e),
                 }
             });
+
+            while let Some(message) = rx.next().await {
+                match socket.emit("new_message", &message) {
+                    Ok(_) => {
+                        println!("{}", message);
+                    }
+                    Err(e) => {
+                        println!("Failed to emit new message: {:?}", e);
+                    }
+                }
+            }
         });
     });
 

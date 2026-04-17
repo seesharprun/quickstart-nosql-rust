@@ -1,11 +1,12 @@
 use serde_json;
-use azure_data_cosmos::{CosmosClient, PartitionKey, Query};
+use azure_data_cosmos::{CosmosClient, CosmosAccountEndpoint, CosmosAccountReference, PartitionKey, Query, RoutingStrategy};
+use azure_data_cosmos::regions::Region;
 use azure_core::credentials::Secret;
 use futures::stream::StreamExt;
 use crate::item::Item;
 
 pub async fn run<F>(
-    endpoint: String,
+    _endpoint: String,
     database_name: String,
     container_name: String,
     callback: F,
@@ -15,14 +16,16 @@ where
 {
     callback("Current Status:\tStarting...".to_string());
 
-    let client = CosmosClient::with_key("<azure-cosmos-db-nosql-endpoint>", Secret::from("<azure-cosmos-db-nosql-read-write-key>"), None).unwrap();
+    let cosmos_endpoint: CosmosAccountEndpoint = "<azure-cosmos-db-nosql-endpoint>".parse()?;
+    let account = CosmosAccountReference::with_master_key(cosmos_endpoint, Secret::from("<azure-cosmos-db-nosql-read-write-key>"));
+    let client = CosmosClient::builder().build(account, RoutingStrategy::ProximityTo(Region::EAST_US)).await?;
 
     callback("Client created".to_string());
 
     let database = client.database_client(&database_name);
     callback(format!("Get database:\t {}", database_name));
 
-    let container = database.container_client(&container_name);
+    let container = database.container_client(&container_name).await?;
     callback(format!("Get container:\t {}", container_name));
 
     {
@@ -63,9 +66,9 @@ where
         let item_id = "aaaaaaaa-0000-1111-2222-bbbbbbbbbbbb";
         let item_partition_key = "gear-surf-surfboards";
 
-        let response = container.read_item(item_partition_key, item_id, None).await?;
+        let response = container.read_item::<Item>(item_partition_key, item_id, None).await?;
 
-        let item: Item = response.into_json_body().await?;
+        let item = response.into_model()?;
 
         callback(format!("Read item:\t{}\t{}", item.id, item.category));
     }
@@ -80,11 +83,9 @@ where
         
         callback("Run query:".to_string());
 
-        while let Some(page_response) = pager.next().await {
-            let page = page_response?.into_body().await?;
-            for item in page.items {
-                callback(serde_json::to_string_pretty(&item).unwrap());
-            }
+        while let Some(item_result) = pager.next().await {
+            let item = item_result?;
+            callback(serde_json::to_string_pretty(&item).unwrap());
         }
     }
     
