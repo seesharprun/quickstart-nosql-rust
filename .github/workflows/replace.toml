@@ -1,2 +1,0 @@
-azure_data_cosmos = { version = "0.22.0", features = ["key_auth"] }
-azure_core = "0.22.0"

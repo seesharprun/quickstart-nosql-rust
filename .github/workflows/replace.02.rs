@@ -1,1 +1,0 @@
-    let client = CosmosClient::with_key("<azure-cosmos-db-nosql-endpoint>", Secret::from("<azure-cosmos-db-nosql-read-write-key>"), None).unwrap();
